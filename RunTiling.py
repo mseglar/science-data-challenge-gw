@@ -138,6 +138,8 @@ print(
 )
 print("Starting the CTA pointing calculation with the following parameters\n")
 print("InputFile: ", InputFileName)
+BNSname = str(ID)
+print("ID to be analyzed: ", sdcID, "BNS ID:", ID)
 print("GW ID to be analyzed: ", GWname, "BNS name:", BNSname)
 print("Source Coordinates: ", Source)
 print("Date: ", InputTime)
@@ -155,7 +157,7 @@ ObservationTime0 = pytz.utc.localize(ObservationTime0)
 
 
 obspar = ObservationParameters()
-obspar.event_name = ID
+obspar.event_name = sdcID
 obspar.skymap = GWFile
 obspar.obsTime = ObservationTime0
 obspar.outDir = outDir
@@ -183,59 +185,41 @@ else:
 
 print(obspar)
 
-if exposureType == "fixed":
-    # Add slewing to time
-    obspar.obsTime = ObservationTime0 + timedelta(seconds=obspar.minSlewing)
-    print(obspar.obsTime, ObservationTime0)
-    GetSchedule(obspar)
-    resultsPath = (
-        obspar.outDir
-        + "/"
-        + str(ID)
-        + "/"
-        + "/PGinFoV/SuggestedPointings_2DProbOptimisation.txt"
+# Add slewing to time
+obspar.obsTime = ObservationTime0 + timedelta(seconds=obspar.minSlewing)
+print(obspar.obsTime, ObservationTime0)
+GetSchedule(obspar)
+resultsPath = f"{obspar.outDir}/{sdcID}/SuggestedPointings_2DProbOptimisation.txt"
+
+if os.path.exists(resultsPath):
+    timeObs, coordinates, pgw = LoadPointingsGW(resultsPath)
+    SuggestedPointings = Table(
+        [timeObs, coordinates.ra.deg, coordinates.dec.deg, pgw],
+        names=["Observation Time UTC", "RA[deg]", "DEC[deg]", "PGW"],
     )
-    if os.path.exists(resultsPath):
-        timeObs, coordinates, pgw = LoadPointingsGW(resultsPath)
-        SuggestedPointings = Table(
-            [timeObs, coordinates.ra.deg, coordinates.dec.deg, pgw],
-            names=["Observation Time UTC", "RA[deg]", "DEC[deg]", "PGW"],
-        )
-        totalPoswindow = len(SuggestedPointings)
-        SuggestedPointings["delay"] = [
-            (
-                pytz.utc.localize(
-                    (
-                        datetime.datetime.strptime(
-                            SuggestedPointings["Observation Time UTC"][i],
-                            "%Y-%m-%d %H:%M:%S",
-                        )
+    totalPoswindow = len(SuggestedPointings)
+    SuggestedPointings["delay"] = [
+        (
+            pytz.utc.localize(
+                (
+                    datetime.datetime.strptime(
+                        SuggestedPointings["Observation Time UTC"][i],
+                        "%Y-%m-%d %H:%M:%S",
                     )
                 )
-                - ObservationTime0
-            ).total_seconds()
-            for i in range(totalPoswindow)
-        ]
-        SuggestedPointings["duration"] = [
-            obspar.duration * 60 for _ in range(totalPoswindow)
-        ]  # from minutes to seconds
-        true_array = ["True" for _ in range(totalPoswindow)]
-        SuggestedPointings["ObsInfo"] = true_array
-        SuggestedPointings["Observatory"] = [
-            obspar.obs_name for _ in range(totalPoswindow)
-        ]
-    else:
-        print("No observations are scheduled for this event")
-if exposureType == "variable" or exposureType == "average":
-    if args.lookup_table is not None:
-        obspar.lookup_table = args.lookup_table
-        print("Using the lookup table: ", obspar.lookup_table)
-
-        SuggestedPointings, obs0, obspar, totalPoswindow = PGWonFoV_WindowOptimisation(
-            GWFile, Source, conf, obspar, datasetDir, exposureType
-        )
-    else:
-        print("No lookup table provided. Observations can't be scheduled")
+            )
+            - ObservationTime0
+        ).total_seconds()
+        for i in range(totalPoswindow)
+    ]
+    SuggestedPointings["duration"] = [
+        obspar.duration * 60 for _ in range(totalPoswindow)
+    ]  # from minutes to seconds
+    true_array = ["True" for _ in range(totalPoswindow)]
+    SuggestedPointings["ObsInfo"] = true_array
+    SuggestedPointings["Observatory"] = [obspar.obs_name for _ in range(totalPoswindow)]
+else:
+    print("No observations are scheduled for this event")
 
 end = time.time()
 print("Execution time: ", end - start)
@@ -250,7 +234,7 @@ try:
 except NameError:
     # Variable is not defined
     print("SuggestedPointings is not defined.")
-    ProducePandasSummaryFile_NoObservation(ID, outDir, configTag)
+    ProducePandasSummaryFile_NoObservation(sdcID, outDir, configTag)
 else:
     # Variable is defined
     print("SuggestedPointings is defined.")
@@ -260,8 +244,8 @@ else:
     print("===== PRODUCING SUMMARY FILE =======")
 
     ProducePandasSummaryFile(
-        Source, SuggestedPointings, ID, obspar, "GW", datasetDir, outDir, configTag
+        Source, SuggestedPointings, sdcID, obspar, "GW", datasetDir, outDir, configTag
     )
 
     if totalPoswindow != 0 and obspar.doPlot == True:
-        PointingPlottingGWCTA(GWFile, ID, outDir, SuggestedPointings, obspar)
+        PointingPlottingGWCTA(GWFile, sdcID, outDir, SuggestedPointings, obspar)
